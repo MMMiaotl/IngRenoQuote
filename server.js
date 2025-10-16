@@ -326,7 +326,323 @@ app.post('/api/generate-pdf', async (req, res) => {
     }
 });
 
-// Note: Excel upload functionality removed - using built-in data only
+// Admin API Routes for price data management
+
+// Get all price data for admin
+app.get('/api/admin/prices', (req, res) => {
+    res.json(priceData);
+});
+
+// Add new price item
+app.post('/api/admin/prices', (req, res) => {
+    try {
+        const newItem = req.body;
+        
+        // Validate required fields
+        if (!newItem.category || !newItem.subCategory || !newItem.item || !newItem.price) {
+            return res.status(400).json({ error: '缺少必填字段' });
+        }
+        
+        // Add new item
+        priceData.push({
+            category: newItem.category,
+            subCategory: newItem.subCategory,
+            item: newItem.item,
+            unit: newItem.unit || '',
+            price: parseFloat(newItem.price),
+            laborPrice: parseFloat(newItem.laborPrice) || 0,
+            materialPrice: parseFloat(newItem.materialPrice) || 0,
+            description: newItem.description || newItem.item
+        });
+        
+        res.json({ success: true, message: '项目添加成功' });
+    } catch (error) {
+        console.error('Error adding price item:', error);
+        res.status(500).json({ error: '添加项目时出错' });
+    }
+});
+
+// Update price item
+app.put('/api/admin/prices/:index', (req, res) => {
+    try {
+        const index = parseInt(req.params.index);
+        const updatedItem = req.body;
+        
+        if (index < 0 || index >= priceData.length) {
+            return res.status(400).json({ error: '无效的项目索引' });
+        }
+        
+        // Validate required fields
+        if (!updatedItem.category || !updatedItem.subCategory || !updatedItem.item || !updatedItem.price) {
+            return res.status(400).json({ error: '缺少必填字段' });
+        }
+        
+        // Update item
+        priceData[index] = {
+            category: updatedItem.category,
+            subCategory: updatedItem.subCategory,
+            item: updatedItem.item,
+            unit: updatedItem.unit || '',
+            price: parseFloat(updatedItem.price),
+            laborPrice: parseFloat(updatedItem.laborPrice) || 0,
+            materialPrice: parseFloat(updatedItem.materialPrice) || 0,
+            description: updatedItem.description || updatedItem.item
+        };
+        
+        res.json({ success: true, message: '项目更新成功' });
+    } catch (error) {
+        console.error('Error updating price item:', error);
+        res.status(500).json({ error: '更新项目时出错' });
+    }
+});
+
+// Delete price item
+app.delete('/api/admin/prices/:index', (req, res) => {
+    try {
+        const index = parseInt(req.params.index);
+        
+        if (index < 0 || index >= priceData.length) {
+            return res.status(400).json({ error: '无效的项目索引' });
+        }
+        
+        // Remove item
+        const deletedItem = priceData.splice(index, 1)[0];
+        
+        res.json({ success: true, message: '项目删除成功', deletedItem });
+    } catch (error) {
+        console.error('Error deleting price item:', error);
+        res.status(500).json({ error: '删除项目时出错' });
+    }
+});
+
+// Save all changes to Excel file
+app.post('/api/admin/save-excel', async (req, res) => {
+    try {
+        const excelPath = path.join(__dirname, 'data', 'price_data.xlsx');
+        const backupPath = path.join(__dirname, 'data', 'price_data_backup.xlsx');
+        
+        console.log('Saving price data, total items:', priceData.length);
+        
+        // Create backup of original file if it exists
+        if (fs.existsSync(excelPath)) {
+            try {
+                fs.copyFileSync(excelPath, backupPath);
+                console.log('Backup created successfully');
+            } catch (backupError) {
+                console.warn('Could not create backup:', backupError.message);
+            }
+        }
+        
+        // Try to load existing workbook first to preserve structure
+        let workbook = new ExcelJS.Workbook();
+        let worksheet;
+        
+        try {
+            if (fs.existsSync(excelPath)) {
+                await workbook.xlsx.readFile(excelPath);
+                worksheet = workbook.worksheets[0];
+                console.log('Loaded existing workbook');
+            } else {
+                throw new Error('File not found');
+            }
+        } catch (loadError) {
+            console.log('Could not load existing file, creating new one:', loadError.message);
+            workbook = new ExcelJS.Workbook();
+            worksheet = workbook.addWorksheet('价格数据');
+            
+            // Add headers
+            worksheet.addRow([
+                '序号', '一级分类', '分类代码', '二级分类', '分类代码', '项目名称',
+                '项目代码', '单位', '单位代码', '单位', '单位代码', '规格型号',
+                '规格型号代码', '技术参数', '技术参数代码', '备注', '备注代码',
+                '总人工价格/单位', '总材料价/单位', '材料费1', '材料费2', '材料费3',
+                '材料费4', '含税价格/单位'
+            ]);
+        }
+        
+        // Clear existing data rows (keep header)
+        const rowCount = worksheet.rowCount;
+        for (let i = rowCount; i > 1; i--) {
+            worksheet.spliceRows(i, 1);
+        }
+        
+        // Add data rows with proper inheritance structure
+        let currentLevel1 = null;
+        let currentLevel2 = null;
+        
+        priceData.forEach((item, index) => {
+            // Add level 1 category row if it's new
+            if (currentLevel1 !== item.category) {
+                currentLevel1 = item.category;
+                worksheet.addRow([
+                    '', // 序号
+                    item.category, // 一级分类
+                    '', // 分类代码
+                    '', // 二级分类
+                    '', // 分类代码
+                    '', // 项目名称
+                    '', // 项目代码
+                    '', // 单位
+                    '', // 单位代码
+                    '', // 单位
+                    '', // 单位代码
+                    '', // 规格型号
+                    '', // 规格型号代码
+                    '', // 技术参数
+                    '', // 技术参数代码
+                    '', // 备注
+                    '', // 备注代码
+                    '', // 总人工价格/单位
+                    '', // 总材料价/单位
+                    '', // 材料费1
+                    '', // 材料费2
+                    '', // 材料费3
+                    '', // 材料费4
+                    '' // 含税价格/单位
+                ]);
+            }
+            
+            // Add level 2 category row if it's new
+            if (currentLevel2 !== item.subCategory) {
+                currentLevel2 = item.subCategory;
+                worksheet.addRow([
+                    '', // 序号
+                    '', // 一级分类
+                    '', // 分类代码
+                    item.subCategory, // 二级分类
+                    '', // 分类代码
+                    '', // 项目名称
+                    '', // 项目代码
+                    '', // 单位
+                    '', // 单位代码
+                    '', // 单位
+                    '', // 单位代码
+                    '', // 规格型号
+                    '', // 规格型号代码
+                    '', // 技术参数
+                    '', // 技术参数代码
+                    '', // 备注
+                    '', // 备注代码
+                    '', // 总人工价格/单位
+                    '', // 总材料价/单位
+                    '', // 材料费1
+                    '', // 材料费2
+                    '', // 材料费3
+                    '', // 材料费4
+                    '' // 含税价格/单位
+                ]);
+            }
+            
+            // Add item row
+            worksheet.addRow([
+                index + 1, // 序号
+                '', // 一级分类 (inherited)
+                '', // 分类代码
+                '', // 二级分类 (inherited)
+                '', // 分类代码
+                item.item, // 项目名称
+                '', // 项目代码
+                item.unit, // 单位
+                '', // 单位代码
+                item.unit, // 单位
+                '', // 单位代码
+                '', // 规格型号
+                '', // 规格型号代码
+                '', // 技术参数
+                '', // 技术参数代码
+                item.description || '', // 备注
+                '', // 备注代码
+                item.laborPrice, // 总人工价格/单位
+                item.materialPrice, // 总材料价/单位
+                '', // 材料费1
+                '', // 材料费2
+                '', // 材料费3
+                '', // 材料费4
+                item.price // 含税价格/单位
+            ]);
+        });
+        
+        console.log('Data prepared for saving, rows:', worksheet.rowCount);
+        
+        // Try to save with retry mechanism
+        let retryCount = 0;
+        const maxRetries = 3;
+        let saveSuccess = false;
+        
+        while (retryCount < maxRetries && !saveSuccess) {
+            try {
+                // Write to a temporary file first
+                const tempPath = excelPath + '.tmp';
+                await workbook.xlsx.writeFile(tempPath);
+                
+                // If successful, replace the original file
+                if (fs.existsSync(excelPath)) {
+                    fs.unlinkSync(excelPath);
+                }
+                fs.renameSync(tempPath, excelPath);
+                
+                saveSuccess = true;
+                console.log('File saved successfully');
+            } catch (writeError) {
+                retryCount++;
+                console.warn(`Save attempt ${retryCount} failed:`, writeError.message);
+                
+                if (retryCount < maxRetries) {
+                    // Wait a bit before retrying
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+        }
+        
+        if (!saveSuccess) {
+            // If all retries failed, try to save with a timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fallbackPath = path.join(__dirname, 'data', `price_data_${timestamp}.xlsx`);
+            await workbook.xlsx.writeFile(fallbackPath);
+            
+            return res.json({ 
+                success: true, 
+                message: `Excel文件保存成功，但由于原文件被占用，已保存为: price_data_${timestamp}.xlsx`,
+                fallbackFile: `price_data_${timestamp}.xlsx`
+            });
+        }
+        
+        res.json({ success: true, message: 'Excel文件保存成功' });
+    } catch (error) {
+        console.error('Error saving Excel file:', error);
+        
+        // Provide more specific error messages
+        if (error.code === 'EBUSY') {
+            res.status(500).json({ 
+                error: 'Excel文件正在被其他程序使用，请关闭Excel或其他可能打开该文件的程序后重试' 
+            });
+        } else if (error.code === 'EACCES') {
+            res.status(500).json({ 
+                error: '没有权限写入文件，请检查文件权限' 
+            });
+        } else {
+            res.status(500).json({ 
+                error: '保存Excel文件时出错: ' + error.message 
+            });
+        }
+    }
+});
+
+// Export Excel file
+app.get('/api/admin/export-excel', async (req, res) => {
+    try {
+        const excelPath = path.join(__dirname, 'data', 'price_data.xlsx');
+        
+        if (!fs.existsSync(excelPath)) {
+            return res.status(404).json({ error: 'Excel文件不存在' });
+        }
+        
+        res.download(excelPath, 'price_data.xlsx');
+    } catch (error) {
+        console.error('Error exporting Excel file:', error);
+        res.status(500).json({ error: '导出Excel文件时出错' });
+    }
+});
 
 // Generate HTML for PDF
 function generateQuoteHTML(quote) {
