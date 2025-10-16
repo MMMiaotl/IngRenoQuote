@@ -94,16 +94,24 @@ async function loadPriceData() {
                     currentLevel1 && currentLevel2 && price && typeof price === 'number') {
                     const laborPrice = row.getCell(18).value;  // 总人工价格/单位
                     const materialPrice = row.getCell(19).value;  // 总材料价/单位
+                    const inPackage = row.getCell(26).value;  // Z列 - 套餐标识
+                    const defaultQuantity = row.getCell(27).value;  // AA列 - 默认数量
+                    
+                    // 计算税前价格 = 总人工价格 + 总材料价格
+                    const preTaxPrice = (laborPrice || 0) + (materialPrice || 0);
                     
                     priceData.push({
                         category: currentLevel1,      // 一级分类
                         subCategory: currentLevel2,   // 二级分类
                         item: level3,                // 项目名称
                         unit: unit,                  // 单位
-                        price: price,                // 含税价格/单位
+                        price: preTaxPrice,          // 使用税前价格作为主要价格
+                        preTaxPrice: preTaxPrice,    // 税前价格/单位
                         laborPrice: laborPrice || 0, // 人工价格
                         materialPrice: materialPrice || 0, // 材料价格
-                        description: level3          // 描述
+                        description: level3,         // 描述
+                        inPackage: inPackage === 1 || inPackage === '1',  // 是否包含在套餐中
+                        defaultQuantity: defaultQuantity || 1  // 默认数量
                     });
                 }
             });
@@ -196,6 +204,42 @@ app.get('/api/items/:category/:subcategory', (req, res) => {
         item.category === category && item.subCategory === subCategory
     );
     res.json(items);
+});
+
+// Get package info by level 1 and level 2 categories
+app.get('/api/package/:category/:subcategory', (req, res) => {
+    const category = req.params.category;
+    const subCategory = req.params.subcategory;
+    
+    // Get all items in this subcategory that are in the package (inPackage = true)
+    const packageItems = priceData.filter(item => 
+        item.category === category && 
+        item.subCategory === subCategory && 
+        item.inPackage === true
+    );
+    
+    // Calculate package totals
+    let packageLaborPrice = 0;
+    let packageMaterialPrice = 0;
+    let packagePreTaxPrice = 0;
+    
+    packageItems.forEach(item => {
+        packageLaborPrice += item.laborPrice || 0;
+        packageMaterialPrice += item.materialPrice || 0;
+        packagePreTaxPrice += item.preTaxPrice || 0;
+    });
+    
+    const packageInfo = {
+        category: category,
+        subCategory: subCategory,
+        itemCount: packageItems.length,
+        packageItems: packageItems,
+        packageLaborPrice: packageLaborPrice,
+        packageMaterialPrice: packageMaterialPrice,
+        packageTotalPrice: packagePreTaxPrice  // 使用税前价格作为套餐总价
+    };
+    
+    res.json(packageInfo);
 });
 
 // Calculate quote

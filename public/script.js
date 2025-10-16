@@ -84,6 +84,46 @@ async function loadDetailedCategories() {
     }
 }
 
+// Load quick items - now loads subcategories directly
+async function loadQuickItems() {
+    const categorySelect = document.getElementById('categorySelect');
+    const itemSelect = document.getElementById('itemSelect');
+    const category = categorySelect.value;
+    
+    // Reset item select
+    itemSelect.innerHTML = '<option value="">请先选择一级分类</option>';
+    
+    if (category) {
+        try {
+            // Get all subcategories for this category
+            const response = await fetch(`/api/subcategories/${encodeURIComponent(category)}`);
+            const subCategories = await response.json();
+            
+            itemSelect.innerHTML = '<option value="">请选择项目</option>';
+            
+            // For each subcategory, get package info
+            for (const subCategory of subCategories) {
+                const packageResponse = await fetch(`/api/package/${encodeURIComponent(category)}/${encodeURIComponent(subCategory)}`);
+                const packageInfo = await packageResponse.json();
+                
+                const option = document.createElement('option');
+                option.value = JSON.stringify(packageInfo);
+                
+                // Display format: subcategory name (package count items, labor + material = total)
+                const laborStr = `人工€${packageInfo.packageLaborPrice.toFixed(2)}`;
+                const materialStr = `材料€${packageInfo.packageMaterialPrice.toFixed(2)}`;
+                const totalStr = `总€${packageInfo.packageTotalPrice.toFixed(2)}`;
+                option.textContent = `${subCategory} (含${packageInfo.itemCount}项: ${laborStr} + ${materialStr} = ${totalStr})`;
+                
+                itemSelect.appendChild(option);
+            }
+        } catch (error) {
+            console.error('Error loading items:', error);
+            showError('加载项目列表失败');
+        }
+    }
+}
+
 // Load level 2 categories (subcategories)
 async function loadSubCategories() {
     const categorySelect = document.getElementById('categorySelect');
@@ -202,30 +242,58 @@ async function loadDetailedItems() {
     }
 }
 
-// Add item to selection
+// Add item to selection (now adds packages)
 function addItem() {
     const itemSelect = document.getElementById('itemSelect');
     const selectedValue = itemSelect.value;
     
     if (selectedValue) {
-        const item = JSON.parse(selectedValue);
+        const packageInfo = JSON.parse(selectedValue);
         
-        // Check if item already exists
-        const existingItem = selectedItems.find(i => i.name === item.item);
-        if (existingItem) {
-            existingItem.quantity += 1;
+        // Check if package already exists
+        const existingPackage = selectedItems.find(i => 
+            i.category === packageInfo.category && i.subCategory === packageInfo.subCategory
+        );
+        
+        if (existingPackage) {
+            // If exists, don't increase quantity automatically
+            showError('该套餐已添加，请直接修改数量');
+            itemSelect.value = '';
+            return;
         } else {
+            // Determine default unit based on package items
+            let defaultUnit = 'm²';  // Default to m²
+            if (packageInfo.packageItems && packageInfo.packageItems.length > 0) {
+                // Check most common unit in package
+                const unitCounts = {};
+                packageInfo.packageItems.forEach(item => {
+                    const itemUnit = item.unit || 'm²';
+                    unitCounts[itemUnit] = (unitCounts[itemUnit] || 0) + 1;
+                });
+                // Find most common unit
+                let maxCount = 0;
+                for (const [unit, count] of Object.entries(unitCounts)) {
+                    if (count > maxCount) {
+                        maxCount = count;
+                        defaultUnit = unit;
+                    }
+                }
+            }
+            
+            // Add new package with separate labor and material prices
             selectedItems.push({
-                name: item.item,
-                quantity: 1,
-                unit: item.unit,
-                description: item.description || item.item,
-                category: item.category,
-                subCategory: item.subCategory,
-                price: item.price,  // 总价
-                laborPrice: item.laborPrice,  // 人工费
-                materialPrice: item.materialPrice,  // 材料费
-                includeMaterials: true  // 默认包含材料费
+                name: packageInfo.subCategory,
+                category: packageInfo.category,
+                subCategory: packageInfo.subCategory,
+                quantity: 1,  // Start with 1 as default quantity
+                unit: defaultUnit,
+                price: packageInfo.packageTotalPrice,     // Total price (labor + material)
+                laborPrice: packageInfo.packageLaborPrice,    // Labor price
+                materialPrice: packageInfo.packageMaterialPrice,  // Material price
+                packageItems: packageInfo.packageItems,
+                itemCount: packageInfo.itemCount,
+                isPackage: true,  // Mark as package
+                includeMaterials: true  // Default include materials
             });
         }
         
@@ -286,39 +354,137 @@ function updateSelectedItemsDisplay() {
         const laborPrice = item.laborPrice || 0;
         const materialPrice = item.materialPrice || 0;
         const includeMaterials = item.includeMaterials !== false; // 默认为true
+        const quantity = item.quantity || 0;
+        const unit = item.unit || 'm²';
         
-        const laborSubtotal = item.quantity * laborPrice;
-        const materialSubtotal = item.quantity * materialPrice;
+        const laborSubtotal = quantity * laborPrice;
+        const materialSubtotal = quantity * materialPrice;
+        const preTaxPrice = laborPrice + materialPrice;
         const subtotal = includeMaterials ? 
-            item.quantity * unitPrice : 
+            quantity * preTaxPrice : 
             laborSubtotal;
         
+        // Check if this is a package item
+        if (item.isPackage) {
+            // Calculate package totals using the same logic as package details
+            let packageLaborSubtotal = 0;
+            let packageMaterialSubtotal = 0;
+            let packagePreTaxSubtotal = 0;
+            
+            item.packageItems.forEach(pkgItem => {
+                const labor = pkgItem.laborPrice || 0;
+                const material = pkgItem.materialPrice || 0;
+                const preTaxPrice = pkgItem.preTaxPrice || 0;
+                const itemQuantity = pkgItem.defaultQuantity || 1;
+                
+                // Calculate subtotals for each item
+                const laborSubtotal = labor * itemQuantity;
+                const materialSubtotal = material * itemQuantity;
+                const preTaxSubtotal = preTaxPrice * itemQuantity;
+                
+                // Add to package totals
+                packageLaborSubtotal += laborSubtotal;
+                packageMaterialSubtotal += materialSubtotal;
+                packagePreTaxSubtotal += preTaxSubtotal;
+            });
+            
+            // Calculate package unit prices - use package quantity from details
+            const packageQuantity = quantity || 1; // Use package quantity, default to 1 if 0
+            const packageLaborUnitPrice = packageLaborSubtotal / packageQuantity;
+            const packageMaterialUnitPrice = packageMaterialSubtotal / packageQuantity;
+            const packagePreTaxUnitPrice = packagePreTaxSubtotal / packageQuantity;
+            
+            const detailsHtml = generatePackageDetailsHTML(item, index);
+            
+            return `
+            <div class="item-row mb-3" data-package-index="${index}">
+            <div class="row align-items-center">
+                <div class="col-md-4">
+                    <strong>${item.name} (套餐)</strong>
+                    <br><small class="text-muted">${item.category}</small>
+                    <br><small class="text-muted">包含 ${item.itemCount} 个项目</small>
+                    <br>
+                    <button class="btn btn-link btn-sm p-0 mt-1" onclick="togglePackageDetails(${index})" style="text-decoration: none;">
+                        <i class="fas fa-chevron-down" id="toggleIcon_${index}"></i> 
+                        <span id="toggleText_${index}">查看套餐明细</span>
+                    </button>
+                </div>
+                <div class="col-md-2">
+                    <div class="price-item">
+                        <div class="price-label">人工费/${unit}</div>
+                        <div class="price-value labor-price-value">€${packageLaborUnitPrice.toFixed(2)}</div>
+                        <div class="price-subtotal labor-subtotal">小计: €${packageLaborSubtotal.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="price-item">
+                        <div class="price-label">
+                            材料费/${unit}
+                            <div class="form-check form-check-inline d-inline-block ms-2">
+                                <input class="form-check-input" type="checkbox" 
+                                       id="includeMaterials_${index}" 
+                                       ${includeMaterials ? 'checked' : ''}
+                                       onchange="toggleItemMaterials(${index}, this.checked)">
+                                <label class="form-check-label" for="includeMaterials_${index}">
+                                    <small>包含</small>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="price-value material-price-value">€${packageMaterialUnitPrice.toFixed(2)}</div>
+                        <div class="price-subtotal material-subtotal">小计: €${packageMaterialSubtotal.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="price-item">
+                        <div class="price-label">${includeMaterials ? '总价' : '仅人工'}/${unit}</div>
+                        <div class="price-value total-price-value">€${includeMaterials ? packagePreTaxUnitPrice.toFixed(2) : packageLaborUnitPrice.toFixed(2)}</div>
+                        <div class="price-subtotal total-subtotal">小计: €${includeMaterials ? packagePreTaxSubtotal.toFixed(2) : packageLaborSubtotal.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="col-md-1 d-flex justify-content-end">
+                    <button class="btn btn-outline-danger btn-sm" onclick="removeItem(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+                
+                <!-- Package Details (Collapsible) -->
+                <div class="collapse mt-3" id="packageDetails_${index}">
+                    <div class="card border-primary">
+                        ${detailsHtml}
+                    </div>
+                </div>
+            </div>
+            `;
+        }
+        
+        // Regular item display (for compatibility)
         return `
         <div class="item-row">
             <div class="row align-items-center">
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <strong>${item.name}</strong>
                     <br><small class="text-muted">${item.category} > ${item.subCategory}</small>
-                    <br><small class="text-muted">${item.unit}</small>
+                    <br><small class="text-muted">${unit}</small>
                 </div>
                 <div class="col-md-1">
                     <label class="form-label">数量:</label>
                     <input type="number" class="form-control form-control-sm" 
-                           value="${item.quantity}" min="0" step="0.1"
+                           value="${quantity}" min="0" step="0.1"
                            onchange="updateItemQuantity(${index}, this.value)">
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <div class="price-item">
                         <div class="price-label">人工费</div>
                         <div class="price-value">€${laborPrice.toFixed(2)}</div>
                         <div class="price-subtotal">小计: €${laborSubtotal.toFixed(2)}</div>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <div class="price-item">
                         <div class="price-label">
                             材料费
-                            <div class="form-check form-check-inline d-inline-block ms-2">
+                            <div class="form-check form-check-inline d-inline-block ms-1">
                                 <input class="form-check-input" type="checkbox" 
                                        id="includeMaterials_${index}" 
                                        ${includeMaterials ? 'checked' : ''}
@@ -332,11 +498,11 @@ function updateSelectedItemsDisplay() {
                         <div class="price-subtotal">小计: €${materialSubtotal.toFixed(2)}</div>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <div class="price-item">
-                        <div class="price-label">${includeMaterials ? '总价' : '人工费'}</div>
-                        <div class="price-value">€${includeMaterials ? unitPrice.toFixed(2) : laborPrice.toFixed(2)}</div>
-                        <div class="price-subtotal">小计: €${subtotal.toFixed(2)}</div>
+                        <div class="price-label">税前价格</div>
+                        <div class="price-value text-info fw-bold">€${(laborPrice + materialPrice).toFixed(2)}</div>
+                        <div class="price-subtotal">小计: €${((laborPrice + materialPrice) * quantity).toFixed(2)}</div>
                     </div>
                 </div>
                 <div class="col-md-1 d-flex justify-content-end">
@@ -353,13 +519,19 @@ function updateSelectedItemsDisplay() {
 // Update item quantity
 function updateItemQuantity(index, quantity) {
     const newQuantity = parseFloat(quantity) || 0;
-    if (newQuantity <= 0) {
-        removeItem(index);
-    } else {
-        selectedItems[index].quantity = newQuantity;
-        updateSelectedItemsDisplay();
-        updateQuoteSummary();
+    if (newQuantity < 0) {
+        return;
     }
+    selectedItems[index].quantity = newQuantity;
+    updateSelectedItemsDisplay();
+    updateQuoteSummary();
+}
+
+// Update item unit
+function updateItemUnit(index, unit) {
+    selectedItems[index].unit = unit;
+    updateSelectedItemsDisplay();
+    updateQuoteSummary();
 }
 
 // Toggle materials inclusion for a specific item
@@ -376,6 +548,247 @@ function removeItem(index) {
     updateQuoteSummary();
 }
 
+// Generate package details HTML
+function generatePackageDetailsHTML(item, index) {
+    const quantity = item.quantity || 0;
+    const includeMaterials = item.includeMaterials !== false;
+    
+    // Calculate totals - sum of all subtotals in each column
+    let totalLaborSubtotal = 0;
+    let totalMaterialSubtotal = 0;
+    let totalPreTaxSubtotal = 0;
+    
+    item.packageItems.forEach(pkgItem => {
+        const labor = pkgItem.laborPrice || 0;
+        const material = pkgItem.materialPrice || 0;
+        const preTaxPrice = pkgItem.preTaxPrice || 0;
+        const itemQuantity = pkgItem.defaultQuantity || 1;
+        
+        // Calculate subtotals for each item
+        const laborSubtotal = labor * itemQuantity;
+        const materialSubtotal = material * itemQuantity;
+        const preTaxSubtotal = preTaxPrice * itemQuantity;
+        
+        // Add to totals
+        totalLaborSubtotal += laborSubtotal;
+        totalMaterialSubtotal += materialSubtotal;
+        totalPreTaxSubtotal += preTaxSubtotal;
+    });
+    
+    return `
+        <div class="card-body" style="
+            padding-left: 0px;
+            padding-top: 0px;
+            padding-right: 0px;
+            padding-bottom: 0px;
+        ">
+            <div class="container-fluid" style="
+                padding-left: 0px;
+                padding-right: 0px;
+            ">
+                <!-- Package Items Table (Compact) -->
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover table-bordered" style="font-size: 0.85rem;">
+                        <thead class="table-primary">
+                            <tr>
+                                <th style="width: 30px;">#</th>
+                                <th>项目名称</th>
+                                <th style="width: 60px;">单位</th>
+                                <th style="width: 80px;" class="text-end">人工费</th>
+                                <th style="width: 80px;" class="text-end">材料费</th>
+                                <th style="width: 80px;" class="text-end">税前价格</th>
+                                <th style="width: 60px;" class="text-center">数量</th>
+                                <th style="width: 80px;" class="text-end">人工小计</th>
+                                <th style="width: 80px;" class="text-end">材料小计</th>
+                                <th style="width: 80px;" class="text-end">小计</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${item.packageItems.map((pkgItem, idx) => {
+                                const labor = pkgItem.laborPrice || 0;
+                                const material = pkgItem.materialPrice || 0;
+                                const preTaxPrice = pkgItem.preTaxPrice || 0;
+                                const itemQuantity = pkgItem.defaultQuantity || 1; // 使用默认数量作为项目数量
+                                
+                                // Calculate subtotals (税前价格 × 数量)
+                                const laborSubtotal = labor * itemQuantity;
+                                const materialSubtotal = material * itemQuantity;
+                                const itemSubtotal = preTaxPrice * itemQuantity; // 使用税前价格计算小计
+                                
+                                return `
+                                <tr>
+                                    <td class="text-center">${idx + 1}</td>
+                                    <td>
+                                        <div style="font-size: 0.8rem; font-weight: 600;">${pkgItem.item}</div>
+                                        ${pkgItem.description && pkgItem.description !== pkgItem.item ? 
+                                            `<div style="font-size: 0.75rem; color: #6c757d;">${pkgItem.description}</div>` : ''}
+                                    </td>
+                                    <td class="text-center" style="font-size: 0.8rem;">${pkgItem.unit}</td>
+                                    <td class="text-end" style="font-size: 0.8rem;">€${labor.toFixed(2)}</td>
+                                    <td class="text-end" style="font-size: 0.8rem;">€${material.toFixed(2)}</td>
+                                    <td class="text-end fw-bold text-info" style="font-size: 0.8rem;">€${preTaxPrice.toFixed(2)}</td>
+                                    <td class="text-center">
+                                        <input type="number" 
+                                               class="form-control form-control-sm text-center" 
+                                               value="${itemQuantity}" 
+                                               min="0" 
+                                               step="1"
+                                               style="font-size: 0.7rem; width: 60px;"
+                                               onchange="updatePackageItemQuantity(${index}, ${idx}, this.value)">
+                                    </td>
+                                    <td class="text-end text-primary" style="font-size: 0.8rem;">€${laborSubtotal.toFixed(2)}</td>
+                                    <td class="text-end text-warning" style="font-size: 0.8rem;">€${materialSubtotal.toFixed(2)}</td>
+                                    <td class="text-end fw-bold text-success" style="font-size: 0.8rem;">€${itemSubtotal.toFixed(2)}</td>
+                                </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr class="fw-bold" style="font-size: 0.85rem;">
+                                <td colspan="7" class="text-end">套餐合计:</td>
+                                <td class="text-end text-primary">€${totalLaborSubtotal.toFixed(2)}</td>
+                                <td class="text-end text-warning">€${totalMaterialSubtotal.toFixed(2)}</td>
+                                <td class="text-end text-success">€${totalPreTaxSubtotal.toFixed(2)}</td>
+                            </tr>
+                            ${!includeMaterials ? `
+                            <tr class="fw-bold table-info" style="font-size: 0.85rem;">
+                                <td colspan="9" class="text-end">实际价格（仅人工）:</td>
+                                <td class="text-end text-primary">€${totalLaborSubtotal.toFixed(2)}</td>
+                            </tr>
+                            ` : ''}
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Toggle package details expand/collapse
+// Update package item quantity
+function updatePackageItemQuantity(packageIndex, itemIndex, newQuantity) {
+    const quantity = parseFloat(newQuantity) || 0;
+    
+    // Update the package item quantity
+    if (selectedItems[packageIndex] && selectedItems[packageIndex].packageItems[itemIndex]) {
+        selectedItems[packageIndex].packageItems[itemIndex].defaultQuantity = quantity;
+        
+        // Update only the package details table content (smooth update)
+        updatePackageDetailsTable(packageIndex);
+        
+        // Update the package item display (without re-rendering the whole list)
+        updatePackageItemDisplay(packageIndex);
+        
+        // Update the quote summary
+        updateQuoteSummary();
+    }
+}
+
+// Update package details table content only
+function updatePackageDetailsTable(packageIndex) {
+    const item = selectedItems[packageIndex];
+    if (!item || !item.isPackage) return;
+    
+    const detailsElement = document.getElementById(`packageDetails_${packageIndex}`);
+    if (detailsElement) {
+        // Find the card element inside the collapse div
+        const cardElement = detailsElement.querySelector('.card');
+        if (cardElement) {
+            // Generate new package details HTML
+            const detailsHtml = generatePackageDetailsHTML(item, packageIndex);
+            
+            // Update only the card content without affecting the collapse state
+            cardElement.innerHTML = detailsHtml;
+        }
+    }
+}
+
+// Update package item display (main row) without re-rendering everything
+function updatePackageItemDisplay(packageIndex) {
+    const item = selectedItems[packageIndex];
+    if (!item || !item.isPackage) return;
+    
+    // Calculate package totals using the same logic as package details
+    let packageLaborSubtotal = 0;
+    let packageMaterialSubtotal = 0;
+    let packagePreTaxSubtotal = 0;
+    
+    item.packageItems.forEach(pkgItem => {
+        const labor = pkgItem.laborPrice || 0;
+        const material = pkgItem.materialPrice || 0;
+        const preTaxPrice = pkgItem.preTaxPrice || 0;
+        const itemQuantity = pkgItem.defaultQuantity || 1;
+        
+        // Calculate subtotals for each item
+        const laborSubtotal = labor * itemQuantity;
+        const materialSubtotal = material * itemQuantity;
+        const preTaxSubtotal = preTaxPrice * itemQuantity;
+        
+        // Add to package totals
+        packageLaborSubtotal += laborSubtotal;
+        packageMaterialSubtotal += materialSubtotal;
+        packagePreTaxSubtotal += preTaxSubtotal;
+    });
+    
+    // Calculate package unit prices
+    const packageQuantity = item.quantity || 1;
+    const packageLaborUnitPrice = packageLaborSubtotal / packageQuantity;
+    const packageMaterialUnitPrice = packageMaterialSubtotal / packageQuantity;
+    const packagePreTaxUnitPrice = packagePreTaxSubtotal / packageQuantity;
+    
+    // Update the main package row display
+    const packageRow = document.querySelector(`[data-package-index="${packageIndex}"]`);
+    if (packageRow) {
+        // Update labor price display
+        const laborPriceElement = packageRow.querySelector('.labor-price-value');
+        const laborSubtotalElement = packageRow.querySelector('.labor-subtotal');
+        if (laborPriceElement) laborPriceElement.textContent = `€${packageLaborUnitPrice.toFixed(2)}`;
+        if (laborSubtotalElement) laborSubtotalElement.textContent = `小计: €${packageLaborSubtotal.toFixed(2)}`;
+        
+        // Update material price display
+        const materialPriceElement = packageRow.querySelector('.material-price-value');
+        const materialSubtotalElement = packageRow.querySelector('.material-subtotal');
+        if (materialPriceElement) materialPriceElement.textContent = `€${packageMaterialUnitPrice.toFixed(2)}`;
+        if (materialSubtotalElement) materialSubtotalElement.textContent = `小计: €${packageMaterialSubtotal.toFixed(2)}`;
+        
+        // Update total price display
+        const totalPriceElement = packageRow.querySelector('.total-price-value');
+        const totalSubtotalElement = packageRow.querySelector('.total-subtotal');
+        const includeMaterials = item.includeMaterials !== false;
+        if (totalPriceElement) {
+            totalPriceElement.textContent = `€${includeMaterials ? packagePreTaxUnitPrice.toFixed(2) : packageLaborUnitPrice.toFixed(2)}`;
+        }
+        if (totalSubtotalElement) {
+            totalSubtotalElement.textContent = `小计: €${includeMaterials ? packagePreTaxSubtotal.toFixed(2) : packageLaborSubtotal.toFixed(2)}`;
+        }
+    }
+}
+
+function togglePackageDetails(index) {
+    const detailsElement = document.getElementById(`packageDetails_${index}`);
+    const icon = document.getElementById(`toggleIcon_${index}`);
+    const text = document.getElementById(`toggleText_${index}`);
+    
+    if (detailsElement) {
+        const bsCollapse = new bootstrap.Collapse(detailsElement, {
+            toggle: true
+        });
+        
+        // Update icon and text
+        detailsElement.addEventListener('shown.bs.collapse', function () {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+            text.textContent = '收起套餐明细';
+        });
+        
+        detailsElement.addEventListener('hidden.bs.collapse', function () {
+            icon.classList.remove('fa-chevron-up');
+            icon.classList.add('fa-chevron-down');
+            text.textContent = '查看套餐明细';
+        });
+    }
+}
+
 
 // Update quote summary
 function updateQuoteSummary() {
@@ -385,20 +798,55 @@ function updateQuoteSummary() {
     let actualTotal = 0; // 实际总价（考虑每个项目的材料费包含状态）
     
     selectedItems.forEach(item => {
-        const unitPrice = item.price || 0;
         const laborPrice = item.laborPrice || 0;
         const materialPrice = item.materialPrice || 0;
         const quantity = item.quantity || 0;
         const includeMaterials = item.includeMaterials !== false;
         
-        totalAmount += unitPrice * quantity;
-        totalLaborAmount += laborPrice * quantity;
-        totalMaterialAmount += materialPrice * quantity;
-        
-        // 根据每个项目的材料费包含状态计算实际总价
-        actualTotal += includeMaterials ? 
-            unitPrice * quantity : 
-            laborPrice * quantity;
+        // For packages, calculate actual subtotals from package items
+        if (item.isPackage) {
+            // Calculate package totals using the same logic as package details
+            let packageLaborSubtotal = 0;
+            let packageMaterialSubtotal = 0;
+            let packagePreTaxSubtotal = 0;
+            
+            item.packageItems.forEach(pkgItem => {
+                const labor = pkgItem.laborPrice || 0;
+                const material = pkgItem.materialPrice || 0;
+                const preTaxPrice = pkgItem.preTaxPrice || 0;
+                const itemQuantity = pkgItem.defaultQuantity || 1;
+                
+                // Calculate subtotals for each item
+                const laborSubtotal = labor * itemQuantity;
+                const materialSubtotal = material * itemQuantity;
+                const preTaxSubtotal = preTaxPrice * itemQuantity;
+                
+                // Add to package totals
+                packageLaborSubtotal += laborSubtotal;
+                packageMaterialSubtotal += materialSubtotal;
+                packagePreTaxSubtotal += preTaxSubtotal;
+            });
+            
+            // Add package totals to overall totals
+            totalLaborAmount += packageLaborSubtotal;
+            totalMaterialAmount += packageMaterialSubtotal;
+            
+            // Calculate actual total based on material inclusion
+            actualTotal += includeMaterials ? 
+                packagePreTaxSubtotal : 
+                packageLaborSubtotal;
+        } else {
+            // For regular items
+            const unitPrice = item.price || 0;
+            totalAmount += unitPrice * quantity;
+            totalLaborAmount += laborPrice * quantity;
+            totalMaterialAmount += materialPrice * quantity;
+            
+            // 根据每个项目的材料费包含状态计算实际总价
+            actualTotal += includeMaterials ? 
+                unitPrice * quantity : 
+                laborPrice * quantity;
+        }
     });
     
     const summaryElement = document.getElementById('quickPriceSummary');
@@ -450,8 +898,7 @@ function resetCalculator() {
         
         // Reset all selects
         document.getElementById('categorySelect').value = '';
-        document.getElementById('subCategorySelect').innerHTML = '<option value="">请先选择一级分类</option>';
-        document.getElementById('itemSelect').innerHTML = '<option value="">请先选择二级分类</option>';
+        document.getElementById('itemSelect').innerHTML = '<option value="">请先选择一级分类</option>';
     } else {
         detailedSelectedItems = [];
         updateDetailedSelectedItemsDisplay();

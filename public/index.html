@@ -154,22 +154,16 @@
             
             <!-- Items Selection -->
             <div class="row mb-3">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label for="categorySelect" class="form-label">一级分类</label>
-                    <select class="form-select" id="categorySelect" onchange="loadSubCategories()">
+                    <select class="form-select" id="categorySelect" onchange="loadQuickItems()">
                         <option value="">请选择一级分类</option>
                     </select>
                 </div>
-                <div class="col-md-4">
-                    <label for="subCategorySelect" class="form-label">二级分类</label>
-                    <select class="form-select" id="subCategorySelect" onchange="loadItems()">
-                        <option value="">请先选择一级分类</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label for="itemSelect" class="form-label">具体项目</label>
+                <div class="col-md-6">
+                    <label for="itemSelect" class="form-label">项目</label>
                     <select class="form-select" id="itemSelect" onchange="addItem()">
-                        <option value="">请先选择二级分类</option>
+                        <option value="">请先选择一级分类</option>
                     </select>
                 </div>
             </div>
