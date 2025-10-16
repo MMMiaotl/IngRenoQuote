@@ -1,12 +1,35 @@
 // Global variables
 let priceData = [];
 let selectedItems = [];
+let detailedSelectedItems = [];
 let currentQuote = null;
+let currentMode = 'quick'; // 'quick' or 'detailed'
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     loadPriceData();
 });
+
+// Switch between quick and detailed mode
+function switchMode(mode) {
+    currentMode = mode;
+    
+    // Update button states
+    document.getElementById('quickModeBtn').classList.toggle('active', mode === 'quick');
+    document.getElementById('detailedModeBtn').classList.toggle('active', mode === 'detailed');
+    
+    // Show/hide calculators
+    document.getElementById('quickCalculator').style.display = mode === 'quick' ? 'block' : 'none';
+    document.getElementById('detailedCalculator').style.display = mode === 'detailed' ? 'block' : 'none';
+    
+    // Load categories for detailed mode if needed
+    if (mode === 'detailed') {
+        loadDetailedCategories();
+    }
+    
+    // Update quote options visibility
+    updateQuoteOptionsVisibility();
+}
 
 // Load price data from server
 async function loadPriceData() {
@@ -41,6 +64,26 @@ async function loadCategories() {
     }
 }
 
+// Load detailed categories
+async function loadDetailedCategories() {
+    try {
+        const response = await fetch('/api/categories');
+        const categories = await response.json();
+        
+        const categorySelect = document.getElementById('detailedCategorySelect');
+        categorySelect.innerHTML = '<option value="">请选择一级分类</option>';
+        categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category;
+            option.textContent = category;
+            categorySelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading detailed categories:', error);
+        showError('加载分类失败');
+    }
+}
+
 // Load level 2 categories (subcategories)
 async function loadSubCategories() {
     const categorySelect = document.getElementById('categorySelect');
@@ -66,6 +109,36 @@ async function loadSubCategories() {
             });
         } catch (error) {
             console.error('Error loading subcategories:', error);
+            showError('加载子分类失败');
+        }
+    }
+}
+
+// Load detailed subcategories
+async function loadDetailedSubCategories() {
+    const categorySelect = document.getElementById('detailedCategorySelect');
+    const subCategorySelect = document.getElementById('detailedSubCategorySelect');
+    const itemSelect = document.getElementById('detailedItemSelect');
+    const category = categorySelect.value;
+    
+    // Reset subcategory and item selects
+    subCategorySelect.innerHTML = '<option value="">请先选择一级分类</option>';
+    itemSelect.innerHTML = '<option value="">请先选择二级分类</option>';
+    
+    if (category) {
+        try {
+            const response = await fetch(`/api/subcategories/${encodeURIComponent(category)}`);
+            const subCategories = await response.json();
+            
+            subCategorySelect.innerHTML = '<option value="">请选择二级分类</option>';
+            subCategories.forEach(subCategory => {
+                const option = document.createElement('option');
+                option.value = subCategory;
+                option.textContent = subCategory;
+                subCategorySelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error loading detailed subcategories:', error);
             showError('加载子分类失败');
         }
     }
@@ -100,6 +173,35 @@ async function loadItems() {
     }
 }
 
+// Load detailed items
+async function loadDetailedItems() {
+    const categorySelect = document.getElementById('detailedCategorySelect');
+    const subCategorySelect = document.getElementById('detailedSubCategorySelect');
+    const itemSelect = document.getElementById('detailedItemSelect');
+    const category = categorySelect.value;
+    const subCategory = subCategorySelect.value;
+    
+    itemSelect.innerHTML = '<option value="">请先选择二级分类</option>';
+    
+    if (category && subCategory) {
+        try {
+            const response = await fetch(`/api/items/${encodeURIComponent(category)}/${encodeURIComponent(subCategory)}`);
+            const items = await response.json();
+            
+            itemSelect.innerHTML = '<option value="">请选择具体项目</option>';
+            items.forEach(item => {
+                const option = document.createElement('option');
+                option.value = JSON.stringify(item);
+                option.textContent = `${item.item} (${item.unit} - €${item.price.toFixed(2)})`;
+                itemSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error loading detailed items:', error);
+            showError('加载项目列表失败');
+        }
+    }
+}
+
 // Add item to selection
 function addItem() {
     const itemSelect = document.getElementById('itemSelect');
@@ -129,6 +231,41 @@ function addItem() {
         
         updateSelectedItemsDisplay();
         updateQuoteSummary();
+        
+        // Reset selection
+        itemSelect.value = '';
+    }
+}
+
+// Add detailed item to selection
+function addDetailedItem() {
+    const itemSelect = document.getElementById('detailedItemSelect');
+    const selectedValue = itemSelect.value;
+    
+    if (selectedValue) {
+        const item = JSON.parse(selectedValue);
+        
+        // Check if item already exists
+        const existingItem = detailedSelectedItems.find(i => i.name === item.item);
+        if (existingItem) {
+            existingItem.quantity += 1;
+        } else {
+            detailedSelectedItems.push({
+                name: item.item,
+                quantity: 1,
+                unit: item.unit,
+                description: item.description || item.item,
+                category: item.category,
+                subCategory: item.subCategory,
+                price: item.price,  // 总价
+                laborPrice: item.laborPrice,  // 人工费
+                materialPrice: item.materialPrice,  // 材料费
+                includeMaterials: true  // 默认包含材料费
+            });
+        }
+        
+        updateDetailedSelectedItemsDisplay();
+        updateDetailedQuoteSummary();
         
         // Reset selection
         itemSelect.value = '';
@@ -285,13 +422,8 @@ function updateQuoteSummary() {
         </div>
     `;
     
-    // Show quote options if there are selected items
-    const quoteOptions = document.getElementById('quoteOptions');
-    if (selectedItems.length > 0) {
-        quoteOptions.style.display = 'block';
-    } else {
-        quoteOptions.style.display = 'none';
-    }
+    // Update quote options visibility
+    updateQuoteOptionsVisibility();
 }
 
 // Show quote form
@@ -311,14 +443,25 @@ function hideQuoteForm() {
 
 // Reset calculator
 function resetCalculator() {
-    selectedItems = [];
-    updateSelectedItemsDisplay();
-    updateQuoteSummary();
-    
-    // Reset all selects
-    document.getElementById('categorySelect').value = '';
-    document.getElementById('subCategorySelect').innerHTML = '<option value="">请先选择一级分类</option>';
-    document.getElementById('itemSelect').innerHTML = '<option value="">请先选择二级分类</option>';
+    if (currentMode === 'quick') {
+        selectedItems = [];
+        updateSelectedItemsDisplay();
+        updateQuoteSummary();
+        
+        // Reset all selects
+        document.getElementById('categorySelect').value = '';
+        document.getElementById('subCategorySelect').innerHTML = '<option value="">请先选择一级分类</option>';
+        document.getElementById('itemSelect').innerHTML = '<option value="">请先选择二级分类</option>';
+    } else {
+        detailedSelectedItems = [];
+        updateDetailedSelectedItemsDisplay();
+        updateDetailedQuoteSummary();
+        
+        // Reset all selects
+        document.getElementById('detailedCategorySelect').value = '';
+        document.getElementById('detailedSubCategorySelect').innerHTML = '<option value="">请先选择一级分类</option>';
+        document.getElementById('detailedItemSelect').innerHTML = '<option value="">请先选择二级分类</option>';
+    }
     
     // Hide quote options
     document.getElementById('quoteOptions').style.display = 'none';
@@ -337,7 +480,10 @@ async function generateQuote() {
         return;
     }
     
-    if (selectedItems.length === 0) {
+    // Get items based on current mode
+    const items = currentMode === 'quick' ? selectedItems : detailedSelectedItems;
+    
+    if (items.length === 0) {
         showError('请至少选择一个项目');
         return;
     }
@@ -359,7 +505,7 @@ async function generateQuote() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                items: selectedItems,
+                items: items,
                 projectInfo: projectInfo
             })
         });
@@ -432,7 +578,10 @@ async function previewQuote() {
         return;
     }
     
-    if (selectedItems.length === 0) {
+    // Get items based on current mode
+    const items = currentMode === 'quick' ? selectedItems : detailedSelectedItems;
+    
+    if (items.length === 0) {
         showError('请至少选择一个项目');
         return;
     }
@@ -454,7 +603,7 @@ async function previewQuote() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                items: selectedItems,
+                items: items,
                 projectInfo: projectInfo
             })
         });
@@ -585,4 +734,173 @@ function showNotification(message, type) {
             alert.parentNode.removeChild(alert);
         }
     }, 3000);
+}
+
+// Detailed calculator functions
+
+// Update detailed selected items display
+function updateDetailedSelectedItemsDisplay() {
+    const container = document.getElementById('detailedSelectedItems');
+    
+    if (detailedSelectedItems.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center">暂无选择项目</p>';
+        return;
+    }
+    
+    container.innerHTML = detailedSelectedItems.map((item, index) => {
+        const unitPrice = item.price || 0;
+        const laborPrice = item.laborPrice || 0;
+        const materialPrice = item.materialPrice || 0;
+        const includeMaterials = item.includeMaterials !== false; // 默认为true
+        
+        const laborSubtotal = item.quantity * laborPrice;
+        const materialSubtotal = item.quantity * materialPrice;
+        const subtotal = includeMaterials ? 
+            item.quantity * unitPrice : 
+            laborSubtotal;
+        
+        return `
+        <div class="item-row">
+            <div class="row align-items-center">
+                <div class="col-md-2">
+                    <strong>${item.name}</strong>
+                    <br><small class="text-muted">${item.category} > ${item.subCategory}</small>
+                    <br><small class="text-muted">${item.unit}</small>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">数量:</label>
+                    <input type="number" class="form-control form-control-sm" 
+                           value="${item.quantity}" min="0" step="0.1"
+                           onchange="updateDetailedItemQuantity(${index}, this.value)">
+                </div>
+                <div class="col-md-2">
+                    <div class="price-item">
+                        <div class="price-label">人工费</div>
+                        <div class="price-value">€${laborPrice.toFixed(2)}</div>
+                        <div class="price-subtotal">小计: €${laborSubtotal.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="price-item">
+                        <div class="price-label">
+                            材料费
+                            <div class="form-check form-check-inline d-inline-block ms-2">
+                                <input class="form-check-input" type="checkbox" 
+                                       id="detailedIncludeMaterials_${index}" 
+                                       ${includeMaterials ? 'checked' : ''}
+                                       onchange="toggleDetailedItemMaterials(${index}, this.checked)">
+                                <label class="form-check-label" for="detailedIncludeMaterials_${index}">
+                                    <small>包含</small>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="price-value">€${materialPrice.toFixed(2)}</div>
+                        <div class="price-subtotal">小计: €${materialSubtotal.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="price-item">
+                        <div class="price-label">${includeMaterials ? '总价' : '人工费'}</div>
+                        <div class="price-value">€${includeMaterials ? unitPrice.toFixed(2) : laborPrice.toFixed(2)}</div>
+                        <div class="price-subtotal">小计: €${subtotal.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="col-md-1 d-flex justify-content-end">
+                    <button class="btn btn-outline-danger btn-sm" onclick="removeDetailedItem(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+// Update detailed item quantity
+function updateDetailedItemQuantity(index, quantity) {
+    const newQuantity = parseFloat(quantity) || 0;
+    if (newQuantity <= 0) {
+        removeDetailedItem(index);
+    } else {
+        detailedSelectedItems[index].quantity = newQuantity;
+        updateDetailedSelectedItemsDisplay();
+        updateDetailedQuoteSummary();
+    }
+}
+
+// Toggle detailed materials inclusion for a specific item
+function toggleDetailedItemMaterials(index, includeMaterials) {
+    detailedSelectedItems[index].includeMaterials = includeMaterials;
+    updateDetailedSelectedItemsDisplay();
+    updateDetailedQuoteSummary();
+}
+
+// Remove detailed item
+function removeDetailedItem(index) {
+    detailedSelectedItems.splice(index, 1);
+    updateDetailedSelectedItemsDisplay();
+    updateDetailedQuoteSummary();
+}
+
+// Update detailed quote summary
+function updateDetailedQuoteSummary() {
+    let totalAmount = 0;
+    let totalLaborAmount = 0;
+    let totalMaterialAmount = 0;
+    let actualTotal = 0; // 实际总价（考虑每个项目的材料费包含状态）
+    
+    detailedSelectedItems.forEach(item => {
+        const unitPrice = item.price || 0;
+        const laborPrice = item.laborPrice || 0;
+        const materialPrice = item.materialPrice || 0;
+        const quantity = item.quantity || 0;
+        const includeMaterials = item.includeMaterials !== false;
+        
+        totalAmount += unitPrice * quantity;
+        totalLaborAmount += laborPrice * quantity;
+        totalMaterialAmount += materialPrice * quantity;
+        
+        // 根据每个项目的材料费包含状态计算实际总价
+        actualTotal += includeMaterials ? 
+            unitPrice * quantity : 
+            laborPrice * quantity;
+    });
+    
+    const summaryElement = document.getElementById('detailedPriceSummary');
+    summaryElement.innerHTML = `
+        <div class="row">
+            <div class="col-md-4">
+                <div class="total-section" style="background: #e3f2fd;">
+                    人工费总计: €${totalLaborAmount.toFixed(2)}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="total-section" style="background: #f3e5f5;">
+                    材料费总计: €${totalMaterialAmount.toFixed(2)}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="total-section" style="background: #e8f5e8;">
+                    实际总价: €${actualTotal.toFixed(2)}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Show quote options if there are selected items
+    updateQuoteOptionsVisibility();
+}
+
+// Update quote options visibility based on current mode
+function updateQuoteOptionsVisibility() {
+    const quoteOptions = document.getElementById('quoteOptions');
+    const hasQuickItems = selectedItems.length > 0;
+    const hasDetailedItems = detailedSelectedItems.length > 0;
+    const hasItems = currentMode === 'quick' ? hasQuickItems : hasDetailedItems;
+    
+    if (hasItems) {
+        quoteOptions.style.display = 'block';
+    } else {
+        quoteOptions.style.display = 'none';
+    }
 }

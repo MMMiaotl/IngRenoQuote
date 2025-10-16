@@ -132,9 +132,25 @@
             </div>
         </div>
 
-        <!-- Quick Price Calculator -->
+        <!-- Price Calculator Toggle -->
         <div class="form-section">
-            <h3><i class="fas fa-calculator"></i> 详细价格计算</h3>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3><i class="fas fa-calculator"></i> 价格计算</h3>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-primary active" id="quickModeBtn" onclick="switchMode('quick')">
+                        <i class="fas fa-bolt"></i> 快速计算
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" id="detailedModeBtn" onclick="switchMode('detailed')">
+                        <i class="fas fa-list"></i> 详细计算
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Price Calculator -->
+        <div class="form-section" id="quickCalculator">
+            <h4><i class="fas fa-bolt"></i> 快速价格计算</h4>
+            <p class="text-muted">快速选择项目并计算总价，适合快速估算</p>
             
             <!-- Items Selection -->
             <div class="row mb-3">
@@ -165,6 +181,45 @@
             
             <!-- Quick Price Summary -->
             <div id="quickPriceSummary" class="mt-4">
+                <div class="total-section">
+                    总金额: €0.00
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Price Calculator -->
+        <div class="form-section" id="detailedCalculator" style="display: none;">
+            <h4><i class="fas fa-list"></i> 详细价格计算</h4>
+            <p class="text-muted">详细选择项目，可调整人工费和材料费，适合精确报价</p>
+            
+            <!-- Items Selection -->
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label for="detailedCategorySelect" class="form-label">一级分类</label>
+                    <select class="form-select" id="detailedCategorySelect" onchange="loadDetailedSubCategories()">
+                        <option value="">请选择一级分类</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="detailedSubCategorySelect" class="form-label">二级分类</label>
+                    <select class="form-select" id="detailedSubCategorySelect" onchange="loadDetailedItems()">
+                        <option value="">请先选择一级分类</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="detailedItemSelect" class="form-label">具体项目</label>
+                    <select class="form-select" id="detailedItemSelect" onchange="addDetailedItem()">
+                        <option value="">请先选择二级分类</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="detailedSelectedItems">
+                <!-- Selected items will be displayed here -->
+            </div>
+            
+            <!-- Detailed Price Summary -->
+            <div id="detailedPriceSummary" class="mt-4">
                 <div class="total-section">
                     总金额: €0.00
                 </div>
