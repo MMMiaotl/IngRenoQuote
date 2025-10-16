@@ -155,26 +155,26 @@ function renderDataTable() {
                            value="${item.item}" 
                            onchange="updateItemField(${originalIndex}, 'item', this.value)">
                 </td>
-                <td>
-                    <input type="text" class="form-control form-control-sm editable" 
-                           value="${item.unit}" 
-                           onchange="updateItemField(${originalIndex}, 'unit', this.value)">
-                </td>
-                <td>
-                    <input type="number" class="form-control form-control-sm editable" 
-                           value="${item.price}" step="0.01" min="0"
-                           onchange="updateItemField(${originalIndex}, 'price', this.value)">
-                </td>
-                <td>
-                    <input type="number" class="form-control form-control-sm editable" 
-                           value="${item.laborPrice}" step="0.01" min="0"
-                           onchange="updateItemField(${originalIndex}, 'laborPrice', this.value)">
-                </td>
-                <td>
-                    <input type="number" class="form-control form-control-sm editable" 
-                           value="${item.materialPrice}" step="0.01" min="0"
-                           onchange="updateItemField(${originalIndex}, 'materialPrice', this.value)">
-                </td>
+                 <td>
+                     <input type="text" class="form-control form-control-sm editable" 
+                            value="${item.unit}" 
+                            onchange="updateItemField(${originalIndex}, 'unit', this.value)">
+                 </td>
+                 <td>
+                     <input type="number" class="form-control form-control-sm editable" 
+                            value="${item.laborPrice}" step="1" min="0"
+                            onchange="updateItemField(${originalIndex}, 'laborPrice', this.value)">
+                 </td>
+                 <td>
+                     <input type="number" class="form-control form-control-sm editable" 
+                            value="${item.materialPrice}" step="1" min="0"
+                            onchange="updateItemField(${originalIndex}, 'materialPrice', this.value)">
+                 </td>
+                 <td>
+                     <span class="form-control-plaintext text-end" style="font-size: 0.875rem;">
+                         €${(item.laborPrice + item.materialPrice).toFixed(2)}
+                     </span>
+                 </td>
                 <td>
                     <select class="form-select form-select-sm editable" 
                             onchange="updateItemField(${originalIndex}, 'inPackage', this.value === 'true')">
@@ -184,7 +184,7 @@ function renderDataTable() {
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm editable" 
-                           value="${item.defaultQuantity || 1}" step="0.1" min="0"
+                           value="${item.defaultQuantity || 1}" step="1" min="0"
                            onchange="updateItemField(${originalIndex}, 'defaultQuantity', this.value)">
                 </td>
                 <td class="action-buttons">
@@ -212,10 +212,15 @@ async function updateItemField(index, field, value) {
             priceData[index][field] = value;
         }
         
-        // Update description if item name changed
-        if (field === 'item') {
-            priceData[index].description = value;
-        }
+         // Update description if item name changed
+         if (field === 'item') {
+             priceData[index].description = value;
+         }
+         
+         // Update pre-tax price display if labor or material price changed
+         if (field === 'laborPrice' || field === 'materialPrice') {
+             updatePreTaxPriceDisplay(index);
+         }
         
         // Update filtered data as well
         const filteredIndex = filteredData.findIndex(item => item === priceData[index]);
@@ -590,4 +595,37 @@ function showNotification(message, type) {
             alert.parentNode.removeChild(alert);
         }
     }, timeout);
+}
+
+// Update pre-tax price display for a specific row
+function updatePreTaxPriceDisplay(index) {
+    const item = priceData[index];
+    const preTaxPrice = (item.laborPrice + item.materialPrice).toFixed(2);
+    
+    // Find the row in the table and update the pre-tax price cell
+    const tbody = document.getElementById('dataTableBody');
+    const rows = tbody.querySelectorAll('tr');
+    
+    rows.forEach((row, rowIndex) => {
+        const laborInput = row.querySelector('input[onchange*="laborPrice"]');
+        const materialInput = row.querySelector('input[onchange*="materialPrice"]');
+        
+        if (laborInput && materialInput) {
+            // Get the original index from the onchange attribute
+            const onchangeAttr = laborInput.getAttribute('onchange');
+            const originalIndexMatch = onchangeAttr.match(/updateItemField\((\d+),/);
+            
+            if (originalIndexMatch && parseInt(originalIndexMatch[1]) === index) {
+                const laborValue = parseFloat(laborInput.value) || 0;
+                const materialValue = parseFloat(materialInput.value) || 0;
+                const calculatedPreTaxPrice = (laborValue + materialValue).toFixed(2);
+                
+                // Find the pre-tax price cell (8th column, index 7)
+                const preTaxCell = row.children[7];
+                if (preTaxCell) {
+                    preTaxCell.innerHTML = `<span class="form-control-plaintext text-end" style="font-size: 0.875rem;">€${calculatedPreTaxPrice}</span>`;
+                }
+            }
+        }
+    });
 }

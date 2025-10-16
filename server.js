@@ -78,7 +78,8 @@ async function loadPriceData() {
                 const level1 = row.getCell(2).value;  // Category-1
                 const level2 = row.getCell(4).value;  // Category-2
                 const level3 = row.getCell(6).value;  // Category-3
-                const price = row.getCell(24).value;  // 含税价格/单位
+                const priceCell = row.getCell(24);    // 税前单价
+                const price = priceCell.value;        // 获取原始值
                 const unit = row.getCell(8).value || row.getCell(10).value;
                 
                 // 继承逻辑：空值继承前一个非空值
@@ -90,8 +91,10 @@ async function loadPriceData() {
                 }
                 
                 // 只处理有项目名称的行
+                // 处理Excel公式：如果是对象且有result属性，使用result值
+                const priceValue = typeof price === 'object' && price && price.result ? price.result : price;
                 if (level3 && typeof level3 === 'string' && level3.trim() !== '' && 
-                    currentLevel1 && currentLevel2 && price && typeof price === 'number') {
+                    currentLevel1 && currentLevel2 && priceValue && typeof priceValue === 'number') {
                     const laborPrice = row.getCell(18).value;  // 总人工价格/单位
                     const materialPrice = row.getCell(19).value;  // 总材料价/单位
                     const inPackage = row.getCell(26).value;  // 第26列 - 套餐标识
@@ -99,8 +102,8 @@ async function loadPriceData() {
                     
                     
                     
-                    // 计算税前价格 = 总人工价格 + 总材料价格
-                    const preTaxPrice = (laborPrice || 0) + (materialPrice || 0);
+                    // 使用Excel中的税前单价，如果为空则计算
+                    const preTaxPrice = priceValue || ((laborPrice || 0) + (materialPrice || 0));
                     
                     priceData.push({
                         category: currentLevel1,      // 一级分类
