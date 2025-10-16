@@ -203,14 +203,16 @@
                 <table class="table table-bordered table-hover data-table" id="dataTable">
                     <thead>
                         <tr>
-                            <th width="5%">序号</th>
-                            <th width="12%">一级分类</th>
-                            <th width="12%">二级分类</th>
-                            <th width="15%">项目名称</th>
-                            <th width="8%">单位</th>
-                            <th width="10%">含税价格</th>
-                            <th width="10%">人工价格</th>
-                            <th width="10%">材料价格</th>
+                            <th width="4%">序号</th>
+                            <th width="10%">一级分类</th>
+                            <th width="10%">二级分类</th>
+                            <th width="12%">项目名称</th>
+                            <th width="6%">单位</th>
+                            <th width="8%">含税价格</th>
+                            <th width="8%">人工价格</th>
+                            <th width="8%">材料价格</th>
+                            <th width="6%">套餐</th>
+                            <th width="6%">默认数量</th>
                             <th width="8%">操作</th>
                         </tr>
                     </thead>
@@ -260,6 +262,17 @@
                             <div class="col-md-6 mb-3">
                                 <label for="modalMaterialPrice" class="form-label">材料价格 (€)</label>
                                 <input type="number" class="form-control" id="modalMaterialPrice" step="0.01" min="0">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="modalInPackage" class="form-label">是否套餐</label>
+                                <select class="form-select" id="modalInPackage">
+                                    <option value="false">否</option>
+                                    <option value="true">是</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="modalDefaultQuantity" class="form-label">默认数量</label>
+                                <input type="number" class="form-control" id="modalDefaultQuantity" step="0.1" min="0" value="1">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="modalDescription" class="form-label">描述</label>

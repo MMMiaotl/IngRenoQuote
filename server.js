@@ -94,8 +94,10 @@ async function loadPriceData() {
                     currentLevel1 && currentLevel2 && price && typeof price === 'number') {
                     const laborPrice = row.getCell(18).value;  // 总人工价格/单位
                     const materialPrice = row.getCell(19).value;  // 总材料价/单位
-                    const inPackage = row.getCell(26).value;  // Z列 - 套餐标识
-                    const defaultQuantity = row.getCell(27).value;  // AA列 - 默认数量
+                    const inPackage = row.getCell(26).value;  // 第26列 - 套餐标识
+                    const defaultQuantity = row.getCell(27).value;  // 第27列 - 默认数量
+                    
+                    
                     
                     // 计算税前价格 = 总人工价格 + 总材料价格
                     const preTaxPrice = (laborPrice || 0) + (materialPrice || 0);
@@ -465,7 +467,16 @@ app.post('/api/admin/save-excel', async (req, res) => {
         const excelPath = path.join(__dirname, 'data', 'price_data.xlsx');
         const backupPath = path.join(__dirname, 'data', 'price_data_backup.xlsx');
         
-        console.log('Saving price data, total items:', priceData.length);
+        // Use data from request body instead of global priceData
+        const dataToSave = req.body;
+        
+        // Validate that dataToSave is an array
+        if (!Array.isArray(dataToSave)) {
+            console.error('Invalid data format: expected array, got', typeof dataToSave);
+            return res.status(400).json({ error: '数据格式错误：期望数组格式' });
+        }
+        
+        console.log('Saving price data, total items:', dataToSave.length);
         
         // Create backup of original file if it exists
         if (fs.existsSync(excelPath)) {
@@ -486,6 +497,27 @@ app.post('/api/admin/save-excel', async (req, res) => {
                 await workbook.xlsx.readFile(excelPath);
                 worksheet = workbook.worksheets[0];
                 console.log('Loaded existing workbook');
+                
+                // Update header row to include new columns if needed
+                const headerRow = worksheet.getRow(1);
+                if (headerRow.cellCount < 27) {
+                    console.log('Updating header row to include new columns');
+                    // Clear existing header
+                    for (let i = 1; i <= headerRow.cellCount; i++) {
+                        headerRow.getCell(i).value = '';
+                    }
+                    // Add new header
+                    const newHeader = [
+                        '序号', '一级分类', '分类代码', '二级分类', '分类代码', '项目名称',
+                        '项目代码', '单位', '单位代码', '单位', '单位代码', '规格型号',
+                        '规格型号代码', '技术参数', '技术参数代码', '备注', '备注代码',
+                        '总人工价格/单位', '总材料价/单位', '材料费1', '材料费2', '材料费3',
+                        '材料费4', '含税价格/单位', '', '套餐', '默认数量'
+                    ];
+                    newHeader.forEach((value, index) => {
+                        headerRow.getCell(index + 1).value = value;
+                    });
+                }
             } else {
                 throw new Error('File not found');
             }
@@ -500,7 +532,7 @@ app.post('/api/admin/save-excel', async (req, res) => {
                 '项目代码', '单位', '单位代码', '单位', '单位代码', '规格型号',
                 '规格型号代码', '技术参数', '技术参数代码', '备注', '备注代码',
                 '总人工价格/单位', '总材料价/单位', '材料费1', '材料费2', '材料费3',
-                '材料费4', '含税价格/单位'
+                '材料费4', '含税价格/单位', '', '套餐', '默认数量'
             ]);
         }
         
@@ -514,7 +546,7 @@ app.post('/api/admin/save-excel', async (req, res) => {
         let currentLevel1 = null;
         let currentLevel2 = null;
         
-        priceData.forEach((item, index) => {
+        dataToSave.forEach((item, index) => {
             // Add level 1 category row if it's new
             if (currentLevel1 !== item.category) {
                 currentLevel1 = item.category;
@@ -542,7 +574,10 @@ app.post('/api/admin/save-excel', async (req, res) => {
                     '', // 材料费2
                     '', // 材料费3
                     '', // 材料费4
-                    '' // 含税价格/单位
+                    '', // 含税价格/单位
+                    '', // 空列
+                    '', // 套餐
+                    '' // 默认数量
                 ]);
             }
             
@@ -573,12 +608,15 @@ app.post('/api/admin/save-excel', async (req, res) => {
                     '', // 材料费2
                     '', // 材料费3
                     '', // 材料费4
-                    '' // 含税价格/单位
+                    '', // 含税价格/单位
+                    '', // 空列
+                    '', // 套餐
+                    '' // 默认数量
                 ]);
             }
             
             // Add item row
-            worksheet.addRow([
+            const rowData = [
                 index + 1, // 序号
                 '', // 一级分类 (inherited)
                 '', // 分类代码
@@ -602,8 +640,14 @@ app.post('/api/admin/save-excel', async (req, res) => {
                 '', // 材料费2
                 '', // 材料费3
                 '', // 材料费4
-                item.price // 含税价格/单位
-            ]);
+                item.price, // 含税价格/单位
+                '', // 空列
+                item.inPackage ? 1 : 0, // 套餐 (第26列)
+                item.defaultQuantity || 1 // 默认数量 (第27列)
+            ];
+            
+            
+            worksheet.addRow(rowData);
         });
         
         console.log('Data prepared for saving, rows:', worksheet.rowCount);
@@ -650,6 +694,9 @@ app.post('/api/admin/save-excel', async (req, res) => {
                 fallbackFile: `price_data_${timestamp}.xlsx`
             });
         }
+        
+        // Update global priceData with the saved data
+        priceData = dataToSave;
         
         res.json({ success: true, message: 'Excel文件保存成功' });
     } catch (error) {

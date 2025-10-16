@@ -131,7 +131,7 @@ function renderDataTable() {
     const tbody = document.getElementById('dataTableBody');
     
     if (filteredData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">没有找到匹配的数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">没有找到匹配的数据</td></tr>';
         return;
     }
     
@@ -175,6 +175,18 @@ function renderDataTable() {
                            value="${item.materialPrice}" step="0.01" min="0"
                            onchange="updateItemField(${originalIndex}, 'materialPrice', this.value)">
                 </td>
+                <td>
+                    <select class="form-select form-select-sm editable" 
+                            onchange="updateItemField(${originalIndex}, 'inPackage', this.value === 'true')">
+                        <option value="false" ${item.inPackage === false ? 'selected' : ''}>否</option>
+                        <option value="true" ${item.inPackage === true ? 'selected' : ''}>是</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="number" class="form-control form-control-sm editable" 
+                           value="${item.defaultQuantity || 1}" step="0.1" min="0"
+                           onchange="updateItemField(${originalIndex}, 'defaultQuantity', this.value)">
+                </td>
                 <td class="action-buttons">
                     <button class="btn btn-sm btn-outline-primary me-1" onclick="editItem(${originalIndex})" title="编辑">
                         <i class="fas fa-edit"></i>
@@ -192,8 +204,10 @@ function renderDataTable() {
 async function updateItemField(index, field, value) {
     if (index >= 0 && index < priceData.length) {
         // Update local data first
-        if (field === 'price' || field === 'laborPrice' || field === 'materialPrice') {
+        if (field === 'price' || field === 'laborPrice' || field === 'materialPrice' || field === 'defaultQuantity') {
             priceData[index][field] = parseFloat(value) || 0;
+        } else if (field === 'inPackage') {
+            priceData[index][field] = value === true || value === 'true';
         } else {
             priceData[index][field] = value;
         }
@@ -206,8 +220,10 @@ async function updateItemField(index, field, value) {
         // Update filtered data as well
         const filteredIndex = filteredData.findIndex(item => item === priceData[index]);
         if (filteredIndex >= 0) {
-            if (field === 'price' || field === 'laborPrice' || field === 'materialPrice') {
+            if (field === 'price' || field === 'laborPrice' || field === 'materialPrice' || field === 'defaultQuantity') {
                 filteredData[filteredIndex][field] = parseFloat(value) || 0;
+            } else if (field === 'inPackage') {
+                filteredData[filteredIndex][field] = value === true || value === 'true';
             } else {
                 filteredData[filteredIndex][field] = value;
             }
@@ -263,6 +279,8 @@ function editItem(index) {
     document.getElementById('modalPrice').value = item.price;
     document.getElementById('modalLaborPrice').value = item.laborPrice;
     document.getElementById('modalMaterialPrice').value = item.materialPrice;
+    document.getElementById('modalInPackage').value = item.inPackage ? 'true' : 'false';
+    document.getElementById('modalDefaultQuantity').value = item.defaultQuantity || 1;
     document.getElementById('modalDescription').value = item.description || '';
     
     const modal = new bootstrap.Modal(document.getElementById('itemModal'));
@@ -275,6 +293,10 @@ function showAddItemModal() {
     
     document.getElementById('modalTitle').textContent = '添加新项目';
     document.getElementById('itemForm').reset();
+    
+    // Set default values for new fields
+    document.getElementById('modalInPackage').value = 'false';
+    document.getElementById('modalDefaultQuantity').value = '1';
     
     const modal = new bootstrap.Modal(document.getElementById('itemModal'));
     modal.show();
@@ -290,6 +312,8 @@ async function saveItem() {
         price: document.getElementById('modalPrice').value,
         laborPrice: document.getElementById('modalLaborPrice').value || 0,
         materialPrice: document.getElementById('modalMaterialPrice').value || 0,
+        inPackage: document.getElementById('modalInPackage').value === 'true',
+        defaultQuantity: parseFloat(document.getElementById('modalDefaultQuantity').value) || 1,
         description: document.getElementById('modalDescription').value.trim()
     };
     
@@ -388,7 +412,11 @@ async function saveAllChanges() {
         showLoading('正在保存所有更改...');
         
         const response = await fetch('/api/admin/save-excel', {
-            method: 'POST'
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(priceData)
         });
         
         const result = await response.json();
