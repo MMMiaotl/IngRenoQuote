@@ -216,22 +216,30 @@ app.get('/api/package/:category/:subcategory', (req, res) => {
     const category = req.params.category;
     const subCategory = req.params.subcategory;
     
-    // Get all items in this subcategory that are in the package (inPackage = true)
-    const packageItems = priceData.filter(item => 
+    // Get all items in this subcategory (both inPackage = true and false)
+    const allItems = priceData.filter(item => 
         item.category === category && 
-        item.subCategory === subCategory && 
-        item.inPackage === true
+        item.subCategory === subCategory
     );
     
-    // Calculate package totals
+    // Process items: set default quantity based on inPackage status
+    const packageItems = allItems.map(item => ({
+        ...item,
+        // If inPackage is true, use defaultQuantity; if false, set quantity to 0
+        quantity: item.inPackage ? (item.defaultQuantity || 1) : 0
+    }));
+    
+    // Calculate package totals (only for items with inPackage = true)
     let packageLaborPrice = 0;
     let packageMaterialPrice = 0;
     let packagePreTaxPrice = 0;
     
     packageItems.forEach(item => {
-        packageLaborPrice += item.laborPrice || 0;
-        packageMaterialPrice += item.materialPrice || 0;
-        packagePreTaxPrice += item.preTaxPrice || 0;
+        if (item.inPackage) {
+            packageLaborPrice += (item.laborPrice || 0) * (item.defaultQuantity || 1);
+            packageMaterialPrice += (item.materialPrice || 0) * (item.defaultQuantity || 1);
+            packagePreTaxPrice += (item.preTaxPrice || 0) * (item.defaultQuantity || 1);
+        }
     });
     
     const packageInfo = {
@@ -256,25 +264,67 @@ app.post('/api/calculate', (req, res) => {
         const calculatedItems = [];
         
         items.forEach(item => {
-            const priceItem = priceData.find(p => p.item === item.name);
-            if (priceItem) {
-                // Calculate subtotal based on individual item's material inclusion
-                const includeMaterials = item.includeMaterials !== false; // 默认为true
+            if (item.isPackage) {
+                // Handle package items (from quick calculation mode)
+                const includeMaterials = item.includeMaterials !== false;
+                
+                // Calculate package totals based on package items
+                let packageLaborTotal = 0;
+                let packageMaterialTotal = 0;
+                let packageTotal = 0;
+                
+                if (item.packageItems && item.packageItems.length > 0) {
+                    item.packageItems.forEach(pkgItem => {
+                        const itemQuantity = pkgItem.quantity || 0;
+                        const laborSubtotal = (pkgItem.laborPrice || 0) * itemQuantity;
+                        const materialSubtotal = (pkgItem.materialPrice || 0) * itemQuantity;
+                        const itemSubtotal = (pkgItem.preTaxPrice || 0) * itemQuantity;
+                        
+                        packageLaborTotal += laborSubtotal;
+                        packageMaterialTotal += materialSubtotal;
+                        packageTotal += itemSubtotal;
+                    });
+                }
+                
+                // Calculate final subtotal based on material inclusion
                 const subtotal = includeMaterials ? 
-                    priceItem.price * item.quantity : 
-                    priceItem.laborPrice * item.quantity;
+                    packageTotal * item.quantity : 
+                    packageLaborTotal * item.quantity;
                 totalAmount += subtotal;
                 
                 calculatedItems.push({
                     ...item,
-                    unitPrice: includeMaterials ? priceItem.price : priceItem.laborPrice,
+                    unitPrice: includeMaterials ? packageTotal : packageLaborTotal,
                     subtotal: subtotal,
-                    unit: priceItem.unit,
-                    description: priceItem.description,
-                    laborPrice: priceItem.laborPrice,
-                    materialPrice: priceItem.materialPrice,
-                    includeMaterials: includeMaterials
+                    unit: item.unit,
+                    description: `${item.name} (套餐)`,
+                    laborPrice: packageLaborTotal,
+                    materialPrice: packageMaterialTotal,
+                    includeMaterials: includeMaterials,
+                    packageItems: item.packageItems
                 });
+            } else {
+                // Handle regular items (from detailed mode)
+                const priceItem = priceData.find(p => p.item === item.name);
+                if (priceItem) {
+                    // Calculate subtotal based on individual item's material inclusion
+                    const includeMaterials = item.includeMaterials !== false; // 默认为true
+                    const subtotal = includeMaterials ? 
+                        priceItem.price * item.quantity : 
+                        priceItem.laborPrice * item.quantity;
+                    totalAmount += subtotal;
+                    
+                    calculatedItems.push({
+                        ...item,
+                        unitPrice: includeMaterials ? priceItem.price : priceItem.laborPrice,
+                        subtotal: subtotal,
+                        unit: priceItem.unit,
+                        description: priceItem.description,
+                        laborPrice: priceItem.laborPrice,
+                        materialPrice: priceItem.materialPrice,
+                        includeMaterials: includeMaterials
+                    });
+                }
             }
         });
         
@@ -306,6 +356,7 @@ app.post('/api/generate-pdf', async (req, res) => {
         try {
             browser = await puppeteer.launch({
                 headless: 'new',
+                executablePath: 'C:\\Users\\User\\.cache\\puppeteer\\chrome\\win64-127.0.6533.88\\chrome-win64\\chrome.exe',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',

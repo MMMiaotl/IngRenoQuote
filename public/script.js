@@ -375,7 +375,7 @@ function updateSelectedItemsDisplay() {
                 const labor = pkgItem.laborPrice || 0;
                 const material = pkgItem.materialPrice || 0;
                 const preTaxPrice = pkgItem.preTaxPrice || 0;
-                const itemQuantity = pkgItem.defaultQuantity || 1;
+                const itemQuantity = pkgItem.quantity || 0;
                 
                 // Calculate subtotals for each item
                 const laborSubtotal = labor * itemQuantity;
@@ -562,7 +562,7 @@ function generatePackageDetailsHTML(item, index) {
         const labor = pkgItem.laborPrice || 0;
         const material = pkgItem.materialPrice || 0;
         const preTaxPrice = pkgItem.preTaxPrice || 0;
-        const itemQuantity = pkgItem.defaultQuantity || 1;
+        const itemQuantity = pkgItem.quantity || 0; // 使用服务器端设置的quantity（根据inPackage状态）
         
         // Calculate subtotals for each item
         const laborSubtotal = labor * itemQuantity;
@@ -608,7 +608,7 @@ function generatePackageDetailsHTML(item, index) {
                                 const labor = pkgItem.laborPrice || 0;
                                 const material = pkgItem.materialPrice || 0;
                                 const preTaxPrice = pkgItem.preTaxPrice || 0;
-                                const itemQuantity = pkgItem.defaultQuantity || 1; // 使用默认数量作为项目数量
+                                const itemQuantity = pkgItem.quantity || 0; // 使用服务器端设置的quantity（根据inPackage状态）
                                 
                                 // Calculate subtotals (税前价格 × 数量)
                                 const laborSubtotal = labor * itemQuantity;
@@ -671,7 +671,7 @@ function updatePackageItemQuantity(packageIndex, itemIndex, newQuantity) {
     
     // Update the package item quantity
     if (selectedItems[packageIndex] && selectedItems[packageIndex].packageItems[itemIndex]) {
-        selectedItems[packageIndex].packageItems[itemIndex].defaultQuantity = quantity;
+        selectedItems[packageIndex].packageItems[itemIndex].quantity = quantity;
         
         // Update only the package details table content (smooth update)
         updatePackageDetailsTable(packageIndex);
@@ -717,7 +717,7 @@ function updatePackageItemDisplay(packageIndex) {
         const labor = pkgItem.laborPrice || 0;
         const material = pkgItem.materialPrice || 0;
         const preTaxPrice = pkgItem.preTaxPrice || 0;
-        const itemQuantity = pkgItem.defaultQuantity || 1;
+        const itemQuantity = pkgItem.quantity || 0; // 使用服务器端设置的quantity
         
         // Calculate subtotals for each item
         const laborSubtotal = labor * itemQuantity;
@@ -814,7 +814,7 @@ function updateQuoteSummary() {
                 const labor = pkgItem.laborPrice || 0;
                 const material = pkgItem.materialPrice || 0;
                 const preTaxPrice = pkgItem.preTaxPrice || 0;
-                const itemQuantity = pkgItem.defaultQuantity || 1;
+                const itemQuantity = pkgItem.quantity || 0;
                 
                 // Calculate subtotals for each item
                 const laborSubtotal = labor * itemQuantity;
