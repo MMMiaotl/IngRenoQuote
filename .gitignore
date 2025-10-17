@@ -4,6 +4,10 @@ package-lock.json
 
 # Build output
 dist/
+!dist/start-mac.sh
+!dist/README-MAC.md
+!dist/使用说明.txt
+!dist/start.bat
 
 # Environment variables
 .env

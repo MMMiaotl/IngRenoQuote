@@ -1,13 +1,16 @@
 {
   "name": "ing-reno-quote",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "装修项目报价器 - 内部使用",
   "main": "server.js",
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build": "pkg . --targets node18-win-x64 --output dist/QuoteGenerator.exe"
+    "prebuild": "node scripts/copy-dist-files.js",
+    "build": "npm run prebuild && pkg . --targets node18-win-x64 --output dist/QuoteGenerator.exe",
+    "build:mac": "npm run prebuild && pkg . --targets node18-macos-x64 --output dist/QuoteGenerator-mac",
+    "build:all": "npm run prebuild && pkg . --targets node18-win-x64,node18-macos-x64 --output dist/QuoteGenerator"
   },
   "pkg": {
     "assets": [
