@@ -10,6 +10,10 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 检测是否在打包环境中运行
+const isPacked = process.pkg;
+const basePath = isPacked ? path.dirname(process.execPath) : __dirname;
+
 // Middleware
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' ? false : true,
@@ -17,7 +21,12 @@ app.use(cors({
 }));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static(path.join(basePath, 'public')));
+
+// 根路径路由
+app.get('/', (req, res) => {
+    res.sendFile(path.join(basePath, 'public', 'index.html'));
+});
 
 // Security headers
 app.use((req, res, next) => {
@@ -62,7 +71,7 @@ let priceData = {};
 async function loadPriceData() {
     try {
         // Check if Excel file exists
-        const excelPath = path.join(__dirname, 'data', 'price_data.xlsx');
+        const excelPath = path.join(basePath, 'data', 'price_data.xlsx');
         if (fs.existsSync(excelPath)) {
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.readFile(excelPath);
@@ -102,8 +111,8 @@ async function loadPriceData() {
                     
                     
                     
-                    // 使用Excel中的税前单价，如果为空则计算
-                    const preTaxPrice = priceValue || ((laborPrice || 0) + (materialPrice || 0));
+                    // 始终根据人工费和材料费计算税前单价，确保数据一致性
+                    const preTaxPrice = (laborPrice || 0) + (materialPrice || 0);
                     
                     priceData.push({
                         category: currentLevel1,      // 一级分类
@@ -136,7 +145,7 @@ async function loadPriceData() {
 // Load default price data from Excel file
 async function loadDefaultPriceData() {
     try {
-        const defaultExcelPath = path.join(__dirname, 'data', 'price_data.xlsx');
+        const defaultExcelPath = path.join(basePath, 'data', 'price_data.xlsx');
         if (fs.existsSync(defaultExcelPath)) {
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.readFile(defaultExcelPath);
@@ -356,7 +365,9 @@ app.post('/api/generate-pdf', async (req, res) => {
         try {
             browser = await puppeteer.launch({
                 headless: 'new',
-                executablePath: 'C:\\Users\\User\\.cache\\puppeteer\\chrome\\win64-127.0.6533.88\\chrome-win64\\chrome.exe',
+                executablePath: isPacked ? 
+                    path.join(basePath, 'puppeteer', 'chrome.exe') : 
+                    'C:\\Users\\User\\.cache\\puppeteer\\chrome\\win64-127.0.6533.88\\chrome-win64\\chrome.exe',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -518,8 +529,14 @@ app.delete('/api/admin/prices/:index', (req, res) => {
 // Save all changes to Excel file
 app.post('/api/admin/save-excel', async (req, res) => {
     try {
-        const excelPath = path.join(__dirname, 'data', 'price_data.xlsx');
-        const backupPath = path.join(__dirname, 'data', 'price_data_backup.xlsx');
+        const excelPath = path.join(basePath, 'data', 'price_data.xlsx');
+        const backupPath = path.join(basePath, 'data', 'price_data_backup.xlsx');
+        
+        // Log the actual paths being used
+        console.log('保存Excel文件到:', excelPath);
+        console.log('basePath:', basePath);
+        console.log('__dirname:', __dirname);
+        console.log('process.cwd():', process.cwd());
         
         // Use data from request body instead of global priceData
         const dataToSave = req.body;
@@ -566,7 +583,7 @@ app.post('/api/admin/save-excel', async (req, res) => {
                         '项目代码', '单位', '单位代码', '单位', '单位代码', '规格型号',
                         '规格型号代码', '技术参数', '技术参数代码', '备注', '备注代码',
                         '总人工价格/单位', '总材料价/单位', '材料费1', '材料费2', '材料费3',
-                        '材料费4', '含税价格/单位', '', '套餐', '默认数量'
+                        '材料费4', '税前价格/单位', '', '套餐', '默认数量'
                     ];
                     newHeader.forEach((value, index) => {
                         headerRow.getCell(index + 1).value = value;
@@ -586,7 +603,7 @@ app.post('/api/admin/save-excel', async (req, res) => {
                 '项目代码', '单位', '单位代码', '单位', '单位代码', '规格型号',
                 '规格型号代码', '技术参数', '技术参数代码', '备注', '备注代码',
                 '总人工价格/单位', '总材料价/单位', '材料费1', '材料费2', '材料费3',
-                '材料费4', '含税价格/单位', '', '套餐', '默认数量'
+                '材料费4', '税前价格/单位', '', '套餐', '默认数量'
             ]);
         }
         
@@ -694,12 +711,20 @@ app.post('/api/admin/save-excel', async (req, res) => {
                 '', // 材料费2
                 '', // 材料费3
                 '', // 材料费4
-                item.price, // 含税价格/单位
+                item.price, // 税前价格/单位
                 '', // 空列
                 item.inPackage ? 1 : 0, // 套餐 (第26列)
                 item.defaultQuantity || 1 // 默认数量 (第27列)
             ];
             
+            // Debug log for specific item
+            if (item.item === '木框架') {
+                console.log('保存木框架数据:', {
+                    laborPrice: item.laborPrice,
+                    materialPrice: item.materialPrice,
+                    price: item.price
+                });
+            }
             
             worksheet.addRow(rowData);
         });
@@ -739,7 +764,7 @@ app.post('/api/admin/save-excel', async (req, res) => {
         if (!saveSuccess) {
             // If all retries failed, try to save with a timestamp
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fallbackPath = path.join(__dirname, 'data', `price_data_${timestamp}.xlsx`);
+            const fallbackPath = path.join(basePath, 'data', `price_data_${timestamp}.xlsx`);
             await workbook.xlsx.writeFile(fallbackPath);
             
             return res.json({ 
@@ -776,7 +801,7 @@ app.post('/api/admin/save-excel', async (req, res) => {
 // Export Excel file
 app.get('/api/admin/export-excel', async (req, res) => {
     try {
-        const excelPath = path.join(__dirname, 'data', 'price_data.xlsx');
+        const excelPath = path.join(basePath, 'data', 'price_data.xlsx');
         
         if (!fs.existsSync(excelPath)) {
             return res.status(404).json({ error: 'Excel文件不存在' });
@@ -948,6 +973,21 @@ async function startServer() {
     
     app.listen(PORT, () => {
         console.log(`装修报价器服务器运行在 http://localhost:${PORT}`);
+        console.log(`管理页面: http://localhost:${PORT}/admin.html`);
+        
+        // 在打包环境中自动打开浏览器
+        if (isPacked) {
+            const { exec } = require('child_process');
+            setTimeout(() => {
+                exec('start http://localhost:3000', (error) => {
+                    if (error) {
+                        console.log('无法自动打开浏览器，请手动访问: http://localhost:3000');
+                    } else {
+                        console.log('浏览器已自动打开');
+                    }
+                });
+            }, 2000); // 等待2秒让服务器完全启动
+        }
     });
 }
 

@@ -217,8 +217,10 @@ async function updateItemField(index, field, value) {
              priceData[index].description = value;
          }
          
-         // Update pre-tax price display if labor or material price changed
+         // Update pre-tax price display and price field if labor or material price changed
          if (field === 'laborPrice' || field === 'materialPrice') {
+             // Update the main price field with the new pre-tax price
+             priceData[index].price = (priceData[index].laborPrice + priceData[index].materialPrice);
              updatePreTaxPriceDisplay(index);
          }
         
@@ -235,6 +237,11 @@ async function updateItemField(index, field, value) {
             
             if (field === 'item') {
                 filteredData[filteredIndex].description = value;
+            }
+            
+            // Update the main price field in filtered data if labor or material price changed
+            if (field === 'laborPrice' || field === 'materialPrice') {
+                filteredData[filteredIndex].price = (filteredData[filteredIndex].laborPrice + filteredData[filteredIndex].materialPrice);
             }
         }
         
@@ -415,6 +422,11 @@ function deleteItem(index) {
 async function saveAllChanges() {
     try {
         showLoading('正在保存所有更改...');
+        
+        // Ensure all price fields are correctly calculated before saving
+        priceData.forEach(item => {
+            item.price = (item.laborPrice || 0) + (item.materialPrice || 0);
+        });
         
         const response = await fetch('/api/admin/save-excel', {
             method: 'POST',
