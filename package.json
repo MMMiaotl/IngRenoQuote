@@ -7,8 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "build": "echo 'Build completed for Railway deployment'",
     "prebuild": "node scripts/copy-dist-files.js",
-    "build": "npm run prebuild && pkg . --targets node18-win-x64 --output dist/QuoteGenerator.exe",
+    "build:exe": "npm run prebuild && pkg . --targets node18-win-x64 --output dist/QuoteGenerator.exe",
     "build:mac": "npm run prebuild && pkg . --targets node18-macos-x64 --output dist/QuoteGenerator-mac",
     "build:all": "npm run prebuild && pkg . --targets node18-win-x64,node18-macos-x64 --output dist/QuoteGenerator"
   },

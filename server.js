@@ -367,6 +367,7 @@ app.post('/api/generate-pdf', async (req, res) => {
                 headless: 'new',
                 executablePath: isPacked ? 
                     path.join(basePath, 'puppeteer', 'chrome.exe') : 
+                    process.env.NODE_ENV === 'production' ? undefined : 
                     'C:\\Users\\User\\.cache\\puppeteer\\chrome\\win64-127.0.6533.88\\chrome-win64\\chrome.exe',
                 args: [
                     '--no-sandbox',
