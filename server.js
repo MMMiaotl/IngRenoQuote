@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // 检测是否在打包环境中运行
 const isPacked = process.pkg;
@@ -26,6 +26,11 @@ app.use(express.static(path.join(basePath, 'public')));
 // 根路径路由
 app.get('/', (req, res) => {
     res.sendFile(path.join(basePath, 'public', 'index.html'));
+});
+
+// 健康检查端点
+app.get('/health', (req, res) => {
+    res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
 // Security headers
